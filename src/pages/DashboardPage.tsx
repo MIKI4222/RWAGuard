@@ -38,6 +38,8 @@ export default function DashboardPage() {
   const bar: Record<Tone, string> = { ok: "bg-ok", warn: "bg-warn", crit: "bg-crit", info: "bg-cyan-brand", muted: "bg-slate-600" };
   const b = breaker.data, c = custody.data;
   const series = (hourly.data ?? []).map((p) => ({ t: p.time.slice(5, 13).replace("T", " "), temperature: p.temperature, wind: p.wind }));
+  const range = (hourly.data ?? []).length ? (() => { const d = hourly.data ?? []; const t = d.map((p) => p.temperature), w = d.map((p) => p.wind), pr = d.map((p) => p.precipitation);
+    const r = (n: number) => Math.round(n * 10) / 10; return { tMin: r(Math.min(...t)), tMax: r(Math.max(...t)), wMax: r(Math.max(...w)), pMax: r(Math.max(...pr)) }; })() : null;
 
   return (
     <>
@@ -86,6 +88,7 @@ export default function DashboardPage() {
               </ResponsiveContainer>
             </div>
           )}
+          {range && <p className="mt-2 text-xs">Next 48 h: temperature {range.tMin}…{range.tMax} °C (policy {POLICY.tempMin}…{POLICY.tempMax}), wind up to {range.wMax} km/h (policy ≤ {POLICY.windMax}), precipitation up to {range.pMax} mm (policy ≤ {POLICY.precipMax}). Policy lines appear on the chart only when the forecast approaches them.</p>}
           <p className="mt-2 text-xs text-fg-mute">Context only: a forecast chart for the location in the contract's configured URL. The contract's own decision comes from the validators' fetch of that URL, not from this chart.</p>
         </Panel>
         <Panel title="Risk history" source="UNAVAILABLE">
