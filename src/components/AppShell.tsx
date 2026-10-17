@@ -4,7 +4,7 @@ import { ShieldCheck, LayoutDashboard, Wheat, ZapOff, ScrollText, Menu, X, Refre
 import { WalletConnect } from "./wallet";
 import { StatusBadge } from "./ui";
 import { useRead } from "../hooks";
-import { read } from "../lib/genlayer";
+import { read, clearReadCache } from "../lib/genlayer";
 import { BREAKER_ADDRESS, CUSTODY_ADDRESS, NETWORK_NAME, REPOS } from "../lib/config";
 import { contractUrl } from "../lib/explorer";
 
@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <div className="flex items-center gap-3"><button className="btn-ghost lg:hidden" onClick={() => setOpen(true)} aria-label="Open navigation"><Menu size={16} /></button><span className="text-sm font-semibold">{titles[pathname] ?? "Not found"}</span><span className="hidden text-xs text-fg-mute sm:inline">{NETWORK_NAME}</span></div>
           <div className="flex flex-wrap items-center gap-3">
             <span className="hidden text-xs text-fg-mute md:inline">{conn.updatedAt ? `Last verified read ${new Date(conn.updatedAt).toLocaleTimeString()}` : "No verified read yet"}</span>
-            <button className="btn-ghost" onClick={() => setTick((t) => t + 1)}><RefreshCw size={13} />Refresh</button>
+            <button className="btn-ghost" onClick={() => { clearReadCache(); setTick((t) => t + 1); }}><RefreshCw size={13} />Refresh</button>
             <WalletConnect />
           </div>
         </header>

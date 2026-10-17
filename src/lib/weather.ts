@@ -37,11 +37,37 @@ export function parseGeocoding(j: any): GeoResult[] {
   return j.results.filter((r: any) => Number.isFinite(r?.latitude) && Number.isFinite(r?.longitude)).map((r: any) => ({ name: String(r.name), country: String(r.country ?? ""), region: String(r.admin1 ?? ""), lat: r.latitude, lon: r.longitude }));
 }
 type F = typeof fetch;
-async function getJson(url: string, f: F, ms = 8000): Promise<any> {
+// Network behaviour (overridable in tests): transient provider errors are retried with backoff, successful
+// responses are cached briefly per fetch function and URL, and identical in-flight requests are shared.
+export const weatherNet = { sleep: (ms: number) => new Promise<void>((r) => setTimeout(r, ms)), retries: 2, baseDelayMs: 800, ttlMs: 30000, now: () => Date.now() };
+const caches = new WeakMap<object, Map<string, { t: number; v?: any; p?: Promise<any> }>>();
+const TRANSIENT = [429, 502, 503, 504];
+async function once(url: string, f: F, ms: number): Promise<any> {
   const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), ms);
-  try { const r = await f(url, { signal: ctl.signal }); if (r.status === 429) throw new Error("Rate limited by the weather provider"); if (!r.ok) throw new Error(`Weather provider returned HTTP ${r.status}`); return await r.json(); }
-  catch (e: any) { throw new Error(e?.name === "AbortError" ? "Weather request timed out" : e?.message || "Weather request failed"); }
-  finally { clearTimeout(t); }
+  try {
+    const r = await f(url, { signal: ctl.signal });
+    if (r.status === 429) throw Object.assign(new Error("Rate limited by the weather provider"), { transient: true });
+    if (!r.ok) throw Object.assign(new Error(`Weather provider returned HTTP ${r.status}${r.status >= 500 ? " (provider temporarily unavailable)" : ""}`), { transient: TRANSIENT.includes(r.status) });
+    return await r.json();
+  } catch (e: any) {
+    if (e?.name === "AbortError") throw Object.assign(new Error("Weather request timed out"), { transient: true });
+    throw e instanceof Error ? e : new Error("Weather request failed");
+  } finally { clearTimeout(t); }
+}
+async function getJson(url: string, f: F, ms = 8000): Promise<any> {
+  let cache = caches.get(f); if (!cache) { cache = new Map(); caches.set(f, cache); }
+  const hit = cache.get(url);
+  if (hit?.p) return hit.p;
+  if (hit && weatherNet.now() - hit.t < weatherNet.ttlMs) return hit.v;
+  const p = (async () => {
+    for (let i = 0; ; i++) {
+      try { return await once(url, f, ms); }
+      catch (e: any) { if (i < weatherNet.retries && e?.transient) { await weatherNet.sleep(weatherNet.baseDelayMs * 2 ** i); continue; } throw e; }
+    }
+  })();
+  cache.set(url, { t: weatherNet.now(), p });
+  try { const v = await p; cache.set(url, { t: weatherNet.now(), v }); return v; }
+  catch (e) { cache.delete(url); throw e; }
 }
 export async function geocode(q: string, f: F = fetch): Promise<GeoResult[]> {
   if (q.trim().length < 2) throw new Error("Enter at least 2 characters");

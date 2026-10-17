@@ -29,7 +29,9 @@ export default function DashboardPage() {
   const conn: { label: string; tone: Tone; note: string } = loadingAll ? { label: "Checking", tone: "info", note: "Reading both contracts…" }
     : failed === 2 ? { label: "Unavailable", tone: "crit", note: "Neither contract could be read." } : failed === 1 ? { label: "Partial", tone: "warn", note: "One contract could not be read; the other is shown." }
     : { label: "Connected", tone: "ok", note: "Both contracts answered a live read." };
+  const waitingUrl = custody.loading && !url; // the contract's weather URL is not known until its state is read
   const wxState: { label: string; tone: Tone; note: string } = weather.data ? { label: "Available", tone: "ok", note: "Open-Meteo answered for the contract's source URL." }
+    : waitingUrl ? { label: "Checking", tone: "info", note: "Waiting for the contract's weather URL…" }
     : weather.loading ? { label: "Checking", tone: "info", note: "Requesting current weather…" } : weather.error ? { label: "Unavailable", tone: "crit", note: weather.error } : { label: "Unknown", tone: "muted", note: "The contract's weather URL is not known yet." };
 
   const tones = [bs?.tone ?? "muted", cs?.tone ?? "muted", conn.tone, wxState.tone];
@@ -53,7 +55,7 @@ export default function DashboardPage() {
         <RiskStatusCard title="Emergency Circuit Breaker" label={bs?.label ?? "Unknown"} tone={bs?.tone ?? "muted"} note={breaker.error && !breaker.data ? breaker.error : bs?.note ?? ""} source={bs ? "ON-CHAIN" : "UNAVAILABLE"} loading={breaker.loading && !breaker.data} />
         <RiskStatusCard title="Weather-Gated RWA Custody" label={cs?.label ?? "Unknown"} tone={cs?.tone ?? "muted"} note={custody.error && !custody.data ? custody.error : cs?.note ?? ""} source={cs ? "ON-CHAIN" : "UNAVAILABLE"} loading={custody.loading && !custody.data} />
         <RiskStatusCard title="GenLayer connectivity" label={conn.label} tone={conn.tone} note={conn.note} source="ON-CHAIN" loading={loadingAll} />
-        <RiskStatusCard title="External weather data" label={wxState.label} tone={wxState.tone} note={wxState.note} source={weather.data ? "LIVE EXTERNAL" : "UNAVAILABLE"} loading={weather.loading && !weather.data && !weather.error} />
+        <RiskStatusCard title="External weather data" label={wxState.label} tone={wxState.tone} note={wxState.note} source={weather.error && !weather.data ? "UNAVAILABLE" : "LIVE EXTERNAL"} loading={waitingUrl || (weather.loading && !weather.data && !weather.error)} />
       </div>
       {(breaker.error || custody.error) && <ErrorState partial={!!(breaker.data || custody.data)} message={[breaker.error && `Circuit Breaker: ${breaker.error}`, custody.error && `RWA Custody: ${custody.error}`].filter(Boolean).join(" | ")} onRetry={() => { void breaker.reload(); void custody.reload(); }} />}
 
@@ -68,7 +70,7 @@ export default function DashboardPage() {
 
       <div className="grid gap-4 xl:grid-cols-3">
         <Panel title="Weather vs. contract policy envelope (next 48 h)" source="LIVE EXTERNAL" className="xl:col-span-2" right={coords ? <span className="font-mono text-xs text-fg-mute">{coords.lat}, {coords.lon}</span> : undefined}>
-          {hourly.loading && !hourly.data ? <Skeleton className="h-56 w-full" /> : hourly.error ? <ErrorState message={hourly.error} onRetry={hourly.reload} /> : series.length === 0 ? <EmptyState title="No forecast to chart">The contract's weather URL has no coordinates the app can read, or the provider returned no data.</EmptyState> : (
+          {waitingUrl || (hourly.loading && !hourly.data) ? <Skeleton className="h-56 w-full" /> : hourly.error ? <ErrorState message={hourly.error} onRetry={hourly.reload} /> : series.length === 0 ? <EmptyState title="No forecast to chart">The contract's weather URL has no coordinates the app can read, or the provider returned no data.</EmptyState> : (
             <div className="h-56 w-full">
               <ResponsiveContainer>
                 <LineChart data={series} margin={{ top: 8, right: 12, bottom: 0, left: -12 }}>

@@ -2,6 +2,7 @@ import { createClient } from "genlayer-js";
 import { testnetBradbury } from "genlayer-js/chains";
 import { BREAKER_ADDRESS, CUSTODY_ADDRESS, RPC_URL } from "./config";
 import { parse } from "./api";
+import { createReader } from "./throttle";
 
 export const TARGET_CHAIN_ID: number | undefined = (testnetBradbury as any)?.id;
 const cfg = (extra: object = {}) => ({ chain: testnetBradbury, ...(RPC_URL ? { endpoint: RPC_URL } : {}), ...extra });
@@ -25,10 +26,13 @@ export async function currentChainId(): Promise<number | null> {
   try { return parseInt(await eth().request({ method: "eth_chainId" }), 16); } catch { return null; }
 }
 
-export async function read(address: string, fn: string, args: any[] = []) {
+// Reads go through a limiter: max 3 concurrent, identical reads shared, 8 s cache, retry with backoff on RPC rate limits.
+const reader = createReader(async (address, fn, args) => {
   const v = await client().readContract({ address: address as `0x${string}`, functionName: fn, args });
   return Array.isArray(v) ? v : parse(v);
-}
+});
+export const read = (address: string, fn: string, args: any[] = []) => reader.read(address, fn, args);
+export const clearReadCache = () => reader.clear(); // call after writes / manual refresh so state is re-read from the chain
 
 export function auditLog(): AuditEntry[] { try { return JSON.parse(localStorage.getItem("rg_audit") || "[]"); } catch { return []; } }
 function logAudit(e: AuditEntry) { try { localStorage.setItem("rg_audit", JSON.stringify([e, ...auditLog()].slice(0, 200))); } catch { /* storage unavailable */ } }
@@ -55,6 +59,7 @@ export async function write(address: string, fn: string, args: any[], account: s
     }
     const execErr = /ERROR/i.test(String(tx?.txExecutionResultName ?? tx?.resultName ?? ""));
     const bad = FAIL.includes(last) || execErr || !OK.includes(last);
+    clearReadCache();
     on(bad ? "failed" : "success", last + (execErr ? " (execution error)" : ""), hash);
     logAudit({ ts: Date.now(), contract: contractName(address), fn, hash, status: bad ? "reverted" : "accepted", raw: ser(tx) });
     if (bad) throw new Error(`Transaction ${last}${execErr ? " with execution error" : ""}`);

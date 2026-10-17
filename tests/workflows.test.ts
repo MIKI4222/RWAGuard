@@ -9,6 +9,7 @@ import * as wx from "../src/lib/weather.ts";
 import { txUrl, contractUrl, TX_URL_FORMAT_VERIFIED } from "../src/lib/explorer.ts";
 import { CUSTODY_EVIDENCE } from "../src/lib/evidence.ts";
 
+wx.weatherNet.sleep = async () => {}; // no real waiting in tests
 const OWNER = "0xOwner", ALICE = "0xAlice", BOB = "0xBob";
 const mk = () => { const c = new MockChain(); c.owner = OWNER.toLowerCase(); c.custodian = OWNER.toLowerCase(); return c; };
 
@@ -117,6 +118,28 @@ test("Weather fetching handles rate limits, HTTP errors and malformed data", asy
   assert.equal((await wx.geocode("Kyiv", res(200, { results: [{ name: "Kyiv", latitude: 1, longitude: 2 }] })))[0].name, "Kyiv");
   const hourly = await wx.fetchHourly(1, 2, res(200, { hourly: { time: ["a", "b"], temperature_2m: [1, null], wind_speed_10m: [2, 3], precipitation: [0, 0] } }));
   assert.equal(hourly.length, 1);
+});
+
+test("Weather requests retry transient provider errors, cache successes and never retry real errors", async () => {
+  const body = { current: { time: "t", temperature_2m: 5, wind_speed_10m: 6, precipitation: 0 } };
+  let n = 0; const delays: number[] = []; const saved = wx.weatherNet.sleep;
+  wx.weatherNet.sleep = async (ms) => { delays.push(ms); };
+  const flaky = (async () => { n++; return n <= 2 ? { status: 503, ok: false, json: async () => ({}) } : { status: 200, ok: true, json: async () => body }; }) as unknown as typeof fetch;
+  const ok = await wx.fetchCurrent("https://x/a", flaky);
+  assert.equal(ok.weather.temperature, 5); assert.equal(n, 3); assert.deepEqual(delays, [800, 1600]);   // two 503s, then success
+  await wx.fetchCurrent("https://x/a", flaky); assert.equal(n, 3);                                       // served from cache
+  let m = 0;
+  const down = (async () => { m++; return { status: 503, ok: false, json: async () => ({}) }; }) as unknown as typeof fetch;
+  await assert.rejects(wx.fetchCurrent("https://x/b", down), /HTTP 503 \(provider temporarily unavailable\)/);
+  assert.equal(m, 3);                                                                                    // 1 try + 2 retries, then it surfaces
+  let k = 0;
+  const notFound = (async () => { k++; return { status: 404, ok: false, json: async () => ({}) }; }) as unknown as typeof fetch;
+  await assert.rejects(wx.fetchCurrent("https://x/c", notFound), /HTTP 404/); assert.equal(k, 1);       // not transient: no retry
+  await assert.rejects(wx.fetchCurrent("https://x/b", down), /HTTP 503/);                                // failures are not cached
+  let c = 0;
+  const slow = (async () => { c++; await new Promise((r) => setTimeout(r, 5)); return { status: 200, ok: true, json: async () => body }; }) as unknown as typeof fetch;
+  await Promise.all([wx.fetchCurrent("https://x/d", slow), wx.fetchCurrent("https://x/d", slow)]); assert.equal(c, 1); // shared in-flight
+  wx.weatherNet.sleep = saved;
 });
 
 test("Explorer links never guess a transaction URL format; documented evidence is intact", () => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Panel, PageHeader, ContractIdentity, StatusBadge, ErrorState, EmptyState, CopyButton, DataSourceBadge, ExplorerLink } from "../components/ui";
+import { Panel, PageHeader, ContractIdentity, StatusBadge, ErrorState, EmptyState, CopyButton, DataSourceBadge, ExplorerLink, Skeleton } from "../components/ui";
 import { useRead } from "../hooks";
 import { useRefreshTick } from "../components/AppShell";
 import { auditLog, read, type AuditEntry } from "../lib/genlayer";
@@ -73,7 +73,7 @@ export default function AuditPage() {
 
       <Panel title="Raw data inspector" right={<div className="flex gap-1" role="tablist">{([["snapshots", "Contract snapshots"], ["weather", "External weather"], ["tx", "Selected transaction"]] as const).map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={`btn-ghost ${tab === k ? "bg-ink-700" : ""}`} onClick={() => setTab(k)}>{l}</button>)}</div>}>
         {tab === "snapshots" && <Inspect source="ON-CHAIN" retrieval={breaker.error || custody.error ? `partial: ${breaker.error || custody.error}` : "ok"} when={custody.updatedAt} contract="both contracts" id="get_* views" data={snapshots} view={view} setView={setView} />}
-        {tab === "weather" && (weather.error ? <ErrorState message={weather.error} onRetry={weather.reload} /> : weather.data ? <Inspect source="LIVE EXTERNAL" retrieval="ok" when={weather.updatedAt} contract="Open-Meteo (not on-chain)" id={url} data={weather.data.raw} view={view} setView={setView} /> : <EmptyState title="No weather response">The contract's weather URL is not known yet.</EmptyState>)}
+        {tab === "weather" && (custody.loading && !url ? <Skeleton className="h-16 w-full" /> : weather.error ? <ErrorState message={weather.error} onRetry={weather.reload} /> : weather.data ? <Inspect source="LIVE EXTERNAL" retrieval="ok" when={weather.updatedAt} contract="Open-Meteo (not on-chain)" id={url} data={weather.data.raw} view={view} setView={setView} /> : <EmptyState title="No weather response">The contract's weather URL is not known yet.</EmptyState>)}
         {tab === "tx" && (sel ? <Inspect source={sel.source} retrieval={sel.status} when={sel.ts} contract={addrOf(sel.contract)} id={sel.hash} data={decoded(sel)} view={view} setView={setView} extra={<ExplorerLink address={addrOf(sel.contract)} hash={sel.hash}>Contract page in Explorer</ExplorerLink>} /> : <EmptyState title="No transaction selected">Select a row in the table above.</EmptyState>)}
         <p className="mt-3 text-xs text-fg-mute">All content is rendered as plain text. External responses are untrusted and never injected as HTML.</p>
       </Panel>

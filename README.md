@@ -71,6 +71,7 @@ The explorer is client-rendered and its per-transaction URL format could not be 
 src/lib/api.ts         contract-facing logic: typed reads, state mapping, validated writes (no SDK/browser imports)
 src/lib/weather.ts     Open-Meteo helpers: URL builder identical to the contract default, policy check, geocoding, forecast
 src/lib/genlayer.ts    genlayer-js client, wallet connection, transaction status polling, local audit log
+src/lib/throttle.ts    read limiter: concurrency cap, de-duplication, short cache, retry on RPC rate limits
 src/lib/explorer.ts    explorer URLs (contract pages only)
 src/lib/evidence.ts    transaction IDs documented in the custody README
 src/components/        AppShell, wallet, design-system components, action runner
@@ -118,7 +119,7 @@ Use MetaMask or another EVM wallet; the app tries to add/switch to Bradbury thro
 
 ## Tests
 
-`npm test` runs `tests/workflows.test.ts` against `tests/mock-chain.ts`, a model of both contracts that rejects any call not matching the real signatures (unknown method, wrong argument count, view/write mix-up, value on a non-payable method). It covers the full circuit-breaker flow (check, pause, block, refused early unpause, recovery), the full custody cycle (challenge, reopen, finalize, claim, reuse, unsafe path), the weather helpers (including that the generated URL equals the contract's default byte for byte), error handling for rate limits and malformed responses, and that every method used in `src/` exists in the contracts. The tests use a model derived from the contract sources, **not a live chain**; no transaction is sent by any test.
+`npm test` runs `tests/workflows.test.ts` against `tests/mock-chain.ts`, a model of both contracts that rejects any call not matching the real signatures (unknown method, wrong argument count, view/write mix-up, value on a non-payable method). It covers the full circuit-breaker flow (check, pause, block, refused early unpause, recovery), the full custody cycle (challenge, reopen, finalize, claim, reuse, unsafe path), the weather helpers (including that the generated URL equals the contract's default byte for byte), error handling for rate limits and malformed responses, and that every method used in `src/` exists in the contracts. `tests/throttle.test.ts` covers the RPC request layer (max 3 concurrent reads, shared identical reads, 8 s cache, retry with backoff on rate-limit errors, no caching of failures), added because the public RPC rate-limits `gen_call`. The tests use a model derived from the contract sources, **not a live chain**; no transaction is sent by any test.
 
 ## Known limitations
 
@@ -128,6 +129,7 @@ Use MetaMask or another EVM wallet; the app tries to add/switch to Bradbury thro
 - Challenge evidence is a URL recorded as a veto signal; it is not adjudicated by the contract.
 - The contracts' owner controls the weather source and challenge period; production use would need governance or a multisig.
 - External web availability can delay or time out validator consensus.
+- The public RPC rate-limits reads; the app queues and retries them, so the first load can take a few seconds.
 
 ## Security considerations
 

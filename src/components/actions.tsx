@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useWallet } from "./wallet";
 import { ConfirmDialog, TxPanel } from "./ui";
 import { useTx } from "../hooks";
-import { write, type Stage } from "../lib/genlayer";
+import { write, clearReadCache, type Stage } from "../lib/genlayer";
 import type { Writer } from "../lib/api";
 
 export type Ask = { op: string; title: string; body: ReactNode; confirmLabel?: string; danger?: boolean; exec: (w: Writer) => Promise<unknown> };
@@ -14,7 +14,7 @@ export function useActionRunner(contract: "Circuit Breaker" | "RWA Custody", add
   const [pending, setPending] = useState<Ask | null>(null);
   const writer = (on: (s: Stage, d?: string, h?: string) => void): Writer => (a, fn, args, v = 0n) => write(a, fn, args, account, on, v);
   const ask = (a: Ask) => { if (status !== "connected") { connect(); return; } setPending(a); };
-  const confirm = () => { const a = pending; setPending(null); if (a) void run(a.op, contract, (on) => a.exec(writer(on))); };
+  const confirm = () => { const a = pending; setPending(null); clearReadCache(); if (a) void run(a.op, contract, (on) => a.exec(writer(on))); };
   const blocked = networkOk === false ? "Switch your wallet to GenLayer Bradbury Testnet" : busy ? "A transaction is in progress" : "";
   const dialog = (
     <ConfirmDialog open={!!pending} title={pending?.title ?? ""} confirmLabel={pending?.confirmLabel ?? "Confirm & sign"} danger={pending?.danger} onConfirm={confirm} onCancel={() => setPending(null)}>
