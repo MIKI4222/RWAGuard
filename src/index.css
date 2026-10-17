@@ -1,0 +1,18 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { color-scheme: dark; }
+html, body, #root { min-height: 100%; }
+body { @apply bg-ink-950 font-sans text-fg antialiased; background-image: radial-gradient(1200px 500px at 85% -10%, rgba(83,216,232,.08), transparent 60%); }
+:focus-visible { outline: 2px solid #53D8E8; outline-offset: 2px; }
+.panel { @apply rounded-xl border bg-ink-800/80 p-5; border-color: rgba(148,163,184,.14); }
+.grid-bg { background-image: linear-gradient(rgba(148,163,184,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,.06) 1px, transparent 1px); background-size: 28px 28px; }
+.btn { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-cyan-brand px-3.5 py-2 text-sm font-semibold text-ink-950 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40; }
+.btn-ghost { @apply inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-1.5 text-xs font-medium text-fg transition hover:bg-ink-700 disabled:cursor-not-allowed disabled:opacity-40; border-color: rgba(148,163,184,.25); }
+.btn-danger { @apply inline-flex items-center justify-center gap-2 rounded-lg bg-crit px-3.5 py-2 text-sm font-semibold text-ink-950 transition hover:brightness-110 disabled:opacity-40; }
+.inp { @apply w-full rounded-lg border bg-ink-950 px-3 py-2 text-sm text-fg placeholder:text-fg-mute/60; border-color: rgba(148,163,184,.25); }
+.label { @apply mb-1 block text-xs font-medium uppercase tracking-wide text-fg-mute; }
+@keyframes pulse-dot { 0%,100% { opacity: 1 } 50% { opacity: .35 } }
+.pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .pulse-dot { animation: none; } }
