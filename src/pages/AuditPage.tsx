@@ -54,7 +54,7 @@ export default function AuditPage() {
         <div className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <input className="inp" placeholder="Search hash or operation" value={q} onChange={(e) => { setQ(e.target.value); setLimit(PAGE); }} aria-label="Search by transaction hash" />
           <select className="inp" value={contract} onChange={(e) => { setContract(e.target.value); setLimit(PAGE); }} aria-label="Filter by contract"><option value="all">All contracts</option><option>Circuit Breaker</option><option>RWA Custody</option></select>
-          <select className="inp" value={status} onChange={(e) => { setStatus(e.target.value); setLimit(PAGE); }} aria-label="Filter by status"><option value="all">All statuses</option><option value="accepted">accepted</option><option value="reverted">reverted</option><option value="error">error</option><option value="documented">documented</option></select>
+          <select className="inp" value={status} onChange={(e) => { setStatus(e.target.value); setLimit(PAGE); }} aria-label="Filter by status"><option value="all">All statuses</option><option value="finalized">finalized</option><option value="accepted">accepted (not final)</option><option value="reverted">reverted</option><option value="error">error</option><option value="documented">documented</option></select>
           <select className="inp" value={sort} onChange={(e) => setSort(e.target.value as "asc" | "desc")} aria-label="Sort by timestamp"><option value="desc">Newest first</option><option value="asc">Oldest first</option></select>
         </div>
         {shown.length === 0 ? <EmptyState title="No matching records">Adjust the filters, or submit a transaction from the Custody or Circuit Breaker page.</EmptyState> : (
@@ -64,7 +64,7 @@ export default function AuditPage() {
               <tr key={r.key} className={`cursor-pointer border-t hover:bg-ink-700/60 ${sel?.key === r.key ? "bg-ink-700/60" : ""}`} style={{ borderColor: "rgba(148,163,184,.12)" }} onClick={() => { setSel(r); setTab("tx"); }}>
                 <td className="py-2 pr-3 text-fg-mute">{r.ts ? new Date(r.ts).toLocaleString() : "n/a"}</td><td className="pr-3">{r.contract}</td><td className="pr-3 font-mono">{r.op}</td>
                 <td className="pr-3 font-mono text-fg-mute">{r.hash.length > 20 ? `${r.hash.slice(0, 10)}…${r.hash.slice(-6)}` : r.hash}</td>
-                <td className="pr-3"><StatusBadge tone={r.status === "accepted" ? "ok" : r.status === "documented" ? "muted" : "crit"}>{r.status}</StatusBadge></td><td><DataSourceBadge source={r.source} /></td>
+                <td className="pr-3"><StatusBadge tone={r.status === "finalized" ? "ok" : r.status === "accepted" ? "warn" : r.status === "documented" ? "muted" : "crit"}>{r.status}</StatusBadge></td><td><DataSourceBadge source={r.source} /></td>
               </tr>))}</tbody>
           </table></div>
         )}

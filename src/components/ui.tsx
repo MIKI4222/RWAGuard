@@ -90,24 +90,29 @@ export function ConfirmDialog({ open, title, children, confirmLabel, danger, onC
 
 const steps: { stage: Stage; label: string }[] = [
   { stage: "preparing", label: "Preparing the operation" }, { stage: "authorizing", label: "Wallet authorization" },
-  { stage: "consensus", label: "Submitted · waiting for consensus" }, { stage: "executing", label: "GenVM execution & validator consensus" }, { stage: "success", label: "Result retrieved · state refreshed" },
+  { stage: "consensus", label: "Submitted · waiting for consensus" }, { stage: "executing", label: "GenVM execution & validator consensus" },
+  { stage: "accepted", label: "Accepted by consensus · awaiting finalization" }, { stage: "success", label: "Finalized · execution succeeded · state verified below" },
 ];
 export function TxPanel({ tx, address }: { tx: TxState | null; address: string }) {
   if (!tx) return null;
   const idx = steps.findIndex((s) => s.stage === tx.stage);
   const failed = tx.stage === "failed";
+  const notFinal = tx.done && tx.stage === "accepted";
   return (
     <div className="mt-4 rounded-lg border border-slate-500/20 bg-ink-950/60 p-4 text-sm" aria-live="polite">
       <div className="flex flex-wrap items-center justify-between gap-2"><span className="font-semibold">{tx.op}</span><span className="text-xs text-fg-mute">{tx.contract} · {new Date(tx.startedAt).toLocaleTimeString()}</span></div>
       <ol className="mt-3 space-y-1.5">
         {steps.map((s, i) => {
           const done = tx.stage === "success" || (!failed && idx > i);
-          const active = !failed && idx === i && tx.stage !== "success";
-          return <li key={s.stage} className={`flex items-center gap-2 ${done || active ? "text-fg" : "text-fg-mute/50"}`}>{done ? <CheckCircle2 size={14} className="text-ok" /> : active ? <Loader2 size={14} className="animate-spin text-cyan-brand" /> : <span className="w-3.5" />}{s.label}</li>;
+          const active = !failed && idx === i && tx.stage !== "success" && !notFinal;
+          return <li key={s.stage} className={`flex items-center gap-2 ${done || active || (notFinal && idx === i) ? "text-fg" : "text-fg-mute/50"}`}>{done ? <CheckCircle2 size={14} className="text-ok" /> : active ? <Loader2 size={14} className="animate-spin text-cyan-brand" /> : notFinal && idx === i ? <AlertTriangle size={14} className="text-warn" /> : <span className="w-3.5" />}{s.label}</li>;
         })}
         {failed && <li className="flex items-center gap-2 text-crit"><XCircle size={14} />Failed</li>}
       </ol>
+      {notFinal && <p className="mt-2 text-xs text-warn">Accepted by consensus but <b>not final</b>: it can still be appealed, so this is not reported as a success. Check the explorer later.</p>}
       {tx.detail && <p className="mt-2 text-xs text-fg-mute">network status: {tx.detail}</p>}
+      {tx.execution && <p className="mt-1 text-xs text-fg-mute">execution result: <span className="font-mono">{tx.execution}</span>{tx.finality ? ` · ${tx.finality}` : ""}</p>}
+      {tx.verification && <p className={`mt-1 text-xs ${tx.verification.ok ? "text-ok" : "text-warn"}`}>{tx.verification.ok ? "✓ " : "⚠ "}{tx.verification.message}</p>}
       {tx.error && <p className="mt-2 break-words text-xs text-crit">{tx.error}{failed && tx.hash ? " — the outcome may be unknown; check the explorer before retrying." : ""}</p>}
       {tx.hash && <div className="mt-3 flex flex-wrap items-center gap-2"><span className="break-all font-mono text-xs text-fg-mute">{tx.hash}</span><CopyButton text={tx.hash} label="Copy hash" /><ExplorerLink address={address} hash={tx.hash}>{TX_URL_FORMAT_VERIFIED ? "View transaction" : "Contract page (tx link format unverified)"}</ExplorerLink></div>}
     </div>

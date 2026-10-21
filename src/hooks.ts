@@ -30,22 +30,25 @@ export function useRead<T>(fn: () => Promise<T>, deps: unknown[] = [], pollMs = 
   return { data, error, loading, updatedAt, reload, stale: !!error && data !== null };
 }
 
-export type TxState = { stage: Stage; op: string; contract: string; detail: string; hash?: string; startedAt: number; error?: string };
+export type Verification = { ok: boolean; message: string };
+export type TxState = { stage: Stage; op: string; contract: string; detail: string; hash?: string; startedAt: number; error?: string; execution?: string; finality?: "finalized" | "accepted"; verification?: Verification; done?: boolean };
 export function useTx(onDone?: () => void) {
   const [tx, setTx] = useState<TxState | null>(null);
   const busyRef = useRef(false);
-  const run = useCallback(async (op: string, contract: string, fn: (on: (s: Stage, d?: string, h?: string) => void) => Promise<unknown>) => {
+  const run = useCallback(async (op: string, contract: string, fn: (on: (s: Stage, d?: string, h?: string) => void, patch: (p: Partial<TxState>) => void) => Promise<unknown>) => {
     if (busyRef.current) return; // prevents accidental duplicate submissions
     busyRef.current = true;
     setTx({ stage: "preparing", op, contract, detail: "", startedAt: Date.now() });
+    const patch = (p: Partial<TxState>) => setTx((prev) => (prev ? { ...prev, ...p } : prev));
     try {
-      await fn((stage, detail, hash) => setTx((p) => (p ? { ...p, stage, detail: detail ?? "", hash: hash ?? p.hash } : p)));
+      await fn((stage, detail, hash) => setTx((p) => (p ? { ...p, stage, detail: detail ?? "", hash: hash ?? p.hash } : p)), patch);
+      patch({ done: true });
       onDone?.();
     } catch (e) {
-      setTx((p) => (p ? { ...p, stage: "failed", error: e instanceof Error ? e.message : String(e) } : p));
+      setTx((p) => (p ? { ...p, stage: "failed", error: e instanceof Error ? e.message : String(e), done: true } : p));
     } finally { busyRef.current = false; }
   }, [onDone]);
-  const busy = tx !== null && tx.stage !== "success" && tx.stage !== "failed";
+  const busy = tx !== null && !tx.done;
   return { tx, run, busy };
 }
 

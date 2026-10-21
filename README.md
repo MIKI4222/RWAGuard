@@ -117,9 +117,16 @@ Use MetaMask or another EVM wallet; the app tries to add/switch to Bradbury thro
 3. The `/* → /index.html` redirect makes direct navigation to `/rwa-custody`, `/circuit-breaker` and `/audit` work after a refresh.
 4. No backend, functions or secrets are required.
 
+## Wallet signing and transaction verification
+
+- Writes are signed by a client created with an **explicit EIP-1193 provider** (`provider: window.ethereum`); reads use a separate wallet-free client. Connection and network-switch errors are surfaced, never swallowed.
+- A transaction is a **success** only when it is `FINALIZED` **and** its execution result is `FINISHED_WITH_RETURN`. `ACCEPTED` is shown as "accepted, not final"; failed executions and unknown outcomes are reported as such.
+- After a finalized success the app re-reads the contract and checks that the state changed as promised, and shows the hash, execution result and that verification in the transaction panel.
+- `npm run evidence` runs the same functions against the deployed contracts from the command line and writes a report. See `docs/TX_VERIFICATION.md`, `docs/LIVE_EVIDENCE.md` and `docs/DEPLOYMENT_EVIDENCE.md`.
+
 ## Tests
 
-`npm test` runs `tests/workflows.test.ts` against `tests/mock-chain.ts`, a model of both contracts that rejects any call not matching the real signatures (unknown method, wrong argument count, view/write mix-up, value on a non-payable method). It covers the full circuit-breaker flow (check, pause, block, refused early unpause, recovery), the full custody cycle (challenge, reopen, finalize, claim, reuse, unsafe path), the weather helpers (including that the generated URL equals the contract's default byte for byte), error handling for rate limits and malformed responses, and that every method used in `src/` exists in the contracts. `tests/throttle.test.ts` covers the RPC request layer (max 3 concurrent reads, shared identical reads, 8 s cache, retry with backoff on rate-limit errors, no caching of failures), added because the public RPC rate-limits `gen_call`. The tests use a model derived from the contract sources, **not a live chain**; no transaction is sent by any test.
+`npm test` runs `tests/workflows.test.ts` (plus `tests/txverify.test.ts`, `tests/verification.test.ts` and `tests/throttle.test.ts`) against `tests/mock-chain.ts`, a model of both contracts that rejects any call not matching the real signatures (unknown method, wrong argument count, view/write mix-up, value on a non-payable method). It covers the full circuit-breaker flow (check, pause, block, refused early unpause, recovery), the full custody cycle (challenge, reopen, finalize, claim, reuse, unsafe path), the weather helpers (including that the generated URL equals the contract's default byte for byte), error handling for rate limits and malformed responses, and that every method used in `src/` exists in the contracts. `tests/throttle.test.ts` covers the RPC request layer (max 3 concurrent reads, shared identical reads, 8 s cache, retry with backoff on rate-limit errors, no caching of failures), added because the public RPC rate-limits `gen_call`. The tests use a model derived from the contract sources, **not a live chain**; no transaction is sent by any test.
 
 ## Known limitations
 

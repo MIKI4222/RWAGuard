@@ -1,0 +1,72 @@
+// Runs real contract operations through the SAME api.ts functions and the SAME strict verification as the web app,
+// and renders a markdown evidence report. All I/O is injected, so it is unit-tested here and wired to the live
+// network by scripts/live-evidence.ts. It never invents data: every hash, status and state value comes from `deps`.
+import * as api from "./api";
+import type { TxVerdict } from "./txverify";
+
+export type OpName = "breaker:health_check" | "breaker:guarded_action" | "breaker:unpause" | "custody:start_cycle" | "custody:propose_release" | "custody:challenge" | "custody:finalize" | "custody:claim";
+export interface WriteOutcome { hash: string; verdict: TxVerdict; finalized: boolean }
+export interface EvidenceDeps { read: api.Reader; write: (address: string, fn: string, args: any[], value?: bigint) => Promise<WriteOutcome>; breaker: string; custody: string }
+export interface EvidenceStep {
+  op: OpName; contract: "Circuit Breaker" | "RWA Custody"; fn: string; address: string; arg: string;
+  hash?: string; consensus?: string; execution?: string; finalized?: boolean; before?: unknown; after?: unknown;
+  check: string | null;               // null = state change confirmed; otherwise the reason it is not
+  error?: string;
+}
+
+type Def = { contract: EvidenceStep["contract"]; fn: string; exec: (w: api.Writer, d: EvidenceDeps, addr: string, arg: string) => Promise<unknown>; verify: (b: any, a: any, arg: string) => string | null };
+export const OPS: Record<OpName, Def> = {
+  "breaker:health_check": { contract: "Circuit Breaker", fn: "health_check", exec: (w, _d, a) => api.healthCheck(w, a), verify: (b, a) => api.expectState.healthCheck(b, a) },
+  "breaker:guarded_action": { contract: "Circuit Breaker", fn: "execute_guarded_action", exec: (w, _d, a, arg) => api.executeGuardedAction(w, a, arg || "evidence-run"), verify: (b, a) => api.expectState.executeGuardedAction(b, a) },
+  "breaker:unpause": { contract: "Circuit Breaker", fn: "emergency_unpause", exec: (w, d, a) => api.emergencyUnpause(d.read, w, a), verify: (b, a) => api.expectState.emergencyUnpause(b, a) },
+  "custody:start_cycle": { contract: "RWA Custody", fn: "start_cycle", exec: (w, _d, a, arg) => api.startCycle(w, a, arg || "evidence-run"), verify: (b, a, arg) => api.expectState.startCycle(b, a, arg || "evidence-run") },
+  "custody:propose_release": { contract: "RWA Custody", fn: "propose_release", exec: (w, _d, a) => api.proposeRelease(w, a), verify: (b, a) => api.expectState.proposeRelease(b, a) },
+  "custody:challenge": { contract: "RWA Custody", fn: "challenge_release", exec: (w, _d, a, arg) => api.challengeRelease(w, a, arg), verify: (b, a) => api.expectState.challengeRelease(b, a) },
+  "custody:finalize": { contract: "RWA Custody", fn: "finalize_release", exec: (w, d, a) => api.finalizeRelease(d.read, w, a), verify: (b, a) => api.expectState.finalizeRelease(b, a) },
+  "custody:claim": { contract: "RWA Custody", fn: "claim_rwa_custody", exec: (w, d, a, arg) => api.claimCustody(d.read, w, a, arg || "evidence-run"), verify: (b, a) => api.expectState.claimCustody(b, a) },
+};
+
+export async function runOp(d: EvidenceDeps, op: OpName, arg = ""): Promise<EvidenceStep> {
+  const def = OPS[op];
+  const address = def.contract === "Circuit Breaker" ? d.breaker : d.custody;
+  const snap = () => (def.contract === "Circuit Breaker" ? api.getBreaker(d.read, address) : api.getCustody(d.read, address));
+  const step: EvidenceStep = { op, contract: def.contract, fn: def.fn, address, arg, check: "not run" };
+  try {
+    step.before = await snap();
+    const w: api.Writer = async (a, fn, args, v) => { const r = await d.write(a, fn, args, v); step.hash = r.hash; step.consensus = r.verdict.status; step.execution = r.verdict.execution; step.finalized = r.finalized; return r; };
+    await def.exec(w, d, address, arg);
+    step.after = await snap();
+    step.check = step.finalized ? def.verify(step.before, step.after, arg) : "accepted but not final: the state change is not verified as final";
+  } catch (e) {
+    step.error = e instanceof Error ? e.message : String(e);
+    step.check = "operation did not succeed";
+  }
+  return step;
+}
+
+export function diffState(before: unknown, after: unknown): string[] {
+  const b = (before ?? {}) as Record<string, unknown>, a = (after ?? {}) as Record<string, unknown>;
+  return Object.keys({ ...b, ...a }).filter((k) => JSON.stringify(b[k]) !== JSON.stringify(a[k])).map((k) => `${k}: ${JSON.stringify(b[k])} → ${JSON.stringify(a[k])}`);
+}
+
+export interface EvidenceMeta { network: string; account: string | null; startedAt: string; explorer: string; breaker: string; custody: string }
+export function renderEvidence(steps: EvidenceStep[], snapshots: { breaker: unknown; custody: unknown }, m: EvidenceMeta): string {
+  const ok = steps.filter((s) => !s.error && s.check === null).length;
+  const L: string[] = [];
+  L.push(`# Live evidence run`, ``, `Generated by \`scripts/live-evidence.ts\` at ${m.startedAt} against **${m.network}**.`, `Sender: ${m.account ?? "none (read-only run)"}`, ``,
+    `| Contract | Address | Explorer |`, `|---|---|---|`,
+    `| Circuit Breaker | \`${m.breaker}\` | ${m.explorer}/address/${m.breaker} |`, `| RWA Custody | \`${m.custody}\` | ${m.explorer}/address/${m.custody} |`, ``,
+    `Result: **${ok} of ${steps.length}** write step(s) finalized with a successful execution result and a confirmed state change.`, ``,
+    `## Read-only snapshot (taken before any write)`, ``, "```json", JSON.stringify(snapshots, null, 2), "```", ``);
+  steps.forEach((s, i) => {
+    L.push(`## Step ${i + 1}: ${s.contract}.${s.fn}${s.arg ? ` (${s.arg})` : ""}`, ``,
+      `- Transaction hash: ${s.hash ? `\`${s.hash}\`` : "not sent"}`,
+      `- Consensus status: ${s.consensus ?? "n/a"}`, `- Execution result: ${s.execution ?? "n/a"}`, `- Finalized: ${s.finalized === undefined ? "n/a" : s.finalized ? "yes" : "no (accepted only)"}`);
+    if (s.error) L.push(`- Error: ${s.error}`);
+    const d = s.before !== undefined && s.after !== undefined ? diffState(s.before, s.after) : [];
+    L.push(`- State change: ${d.length ? "" : "none observed"}`); d.forEach((x) => L.push(`  - ${x}`));
+    L.push(`- Verification: ${s.check === null ? "✓ state change confirmed by a fresh read" : `✗ ${s.check}`}`, ``);
+  });
+  L.push(`> Hashes above come from the network response for this run. The explorer's per-transaction URL format is not verified by this project; search the hash on the contract's explorer page.`, ``);
+  return L.join("\n");
+}

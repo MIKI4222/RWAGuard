@@ -108,3 +108,25 @@ export function setChallengePeriod(write: Writer, a: string, seconds: string) {
   if (!Number.isSafeInteger(n) || n <= 0) throw new Error("Period must be a positive number of seconds");
   return write(a, "set_challenge_period", [n], 0n);
 }
+
+// ================= Post-transaction state verification =================
+// After a transaction is FINALIZED with a successful execution result, the app re-reads the contract and checks that the
+// state changed the way the operation promises. Each check returns null when the change is confirmed, otherwise a message.
+const eq = (cond: boolean, msg: string) => (cond ? null : msg);
+export const expectState = {
+  // Circuit Breaker
+  healthCheck: (b: Breaker, a: Breaker) => eq(a.lastCheck > b.lastCheck, `last check timestamp did not advance (${b.lastCheck} → ${a.lastCheck})`),
+  executeGuardedAction: (b: Breaker, a: Breaker) => eq(a.guardedActions === b.guardedActions + 1, `guarded action count ${b.guardedActions} → ${a.guardedActions}, expected +1`),
+  emergencyUnpause: (_b: Breaker, a: Breaker) => eq(a.status === "ACTIVE", `status is ${a.status}, expected ACTIVE`),
+  setMonitoredUrl: (_b: Breaker, a: Breaker, url: string) => eq(a.monitoredUrl === url.trim(), "monitored URL does not match the submitted value"),
+  // RWA Custody
+  startCycle: (b: Custody, a: Custody, label: string) => eq(a.cycleId === b.cycleId + 1 && a.status === "OPEN" && a.label === label.trim(), `cycle ${b.cycleId} → ${a.cycleId}, status ${a.status}, label “${a.label}”`),
+  proposeRelease: (b: Custody, a: Custody) => eq(a.assessments === b.assessments + 1, `assessment count ${b.assessments} → ${a.assessments}, expected +1`),
+  challengeRelease: (b: Custody, a: Custody) => eq(a.challenges === b.challenges + 1 && a.status === "CHALLENGED", `challenges ${b.challenges} → ${a.challenges}, status ${a.status}`),
+  finalizeRelease: (_b: Custody, a: Custody) => eq(a.status === "RELEASED", `status is ${a.status}, expected RELEASED`),
+  claimCustody: (b: Custody, a: Custody) => eq(a.status === "CLAIMED" && a.completed === b.completed + 1, `status ${a.status}, completed cycles ${b.completed} → ${a.completed}`),
+  reopenChallengedProposal: (_b: Custody, a: Custody) => eq(a.status === "REOPENED", `status is ${a.status}, expected REOPENED`),
+  closeUnsafeCycle: (_b: Custody, a: Custody) => eq(a.status === "CLOSED_UNSAFE", `status is ${a.status}, expected CLOSED_UNSAFE`),
+  setWeatherUrl: (_b: Custody, a: Custody, url: string) => eq(a.weatherUrl === url.trim(), "weather URL does not match the submitted value"),
+  setChallengePeriod: (_b: Custody, a: Custody, seconds: string) => eq(a.period === Number(seconds), `challenge period is ${a.period}s, expected ${Number(seconds)}s`),
+};
